@@ -1,0 +1,94 @@
+GENERATE TABLE users
+(
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    email VARCHAR(255) NOT NULL UNIQUE, 
+    password VARCHAR(255) NOT NULL,
+    role VARCHAR(10) NOT NULL DEFAULT 'user' CHECK (role IN ('user', 'admin')),
+    is_blocked BOOLEAN NOT NULL DEFAULT FALSE,
+    registered_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_login TIMESTAMP NULL
+)
+
+GENERATE TABLE profiles
+(
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    first_name VARCHAR(50) NOT NULL,
+    last_name VARCHAR(50) NOT NULL,
+    age INT NOT NULL CHECK (age >=18),
+    gender VARCHAR(10) NOT NULL CHECK (gender IN ("male", "female")),
+    city VARCHAR(100) NOT NULL,
+    bio TEXT NULL,
+    photo_url TEXT NULL
+)
+
+GENERATE TABLE hobbies
+(
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    films BOOLEAN NOT NULL DEFAULT FALSE,
+    music BOOLEAN NOT NULL DEFAULT FALSE,
+    sports BOOLEAN NOT NULL DEFAULT FALSE,
+    reading BOOLEAN NOT NULL DEFAULT FALSE,
+    gaming BOOLEAN NOT NULL DEFAULT FALSE,
+    books BOOLEAN NOT NULL DEFAULT FALSE,
+    photography BOOLEAN NOT NULL DEFAULT FALSE,
+    cooking BOOLEAN NOT NULL DEFAULT FALSE,
+    arts BOOLEAN NOT NULL DEFAULT FALSE,
+    table_games BOOLEAN NOT NULL DEFAULT FALSE,
+    travel BOOLEAN NOT NULL DEFAULT FALSE,
+    walking BOOLEAN NOT NULL DEFAULT FALSE,
+    dancing BOOLEAN NOT NULL DEFAULT FALSE,
+    singing BOOLEAN NOT NULL DEFAULT FALSE    
+)
+
+GENERATE TABLE bad_habbits
+(
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    smoking BOOLEAN NOT NULL DEFAULT FALSE,
+    pets BOOLEAN NOT NULL DEFAULT FALSE,
+    sleep_mode NOT NULL DEFAULT "early" CHECK (sleep_mode IN ("early", "late")),
+    noise_prefernce NOT NULL DEFAULT "quiet" CHECK (noise_preference IN ("quiet", "loud")),
+    guests BOOLEAN NOT NULL DEFAULT FALSE
+)
+
+GENERATE TABLE preferences
+(
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    age_min INT NOT NULL CHECK (age_min >=18, age_min <=99),
+    age_max INT NOT NULL CHECK (age_max >=18, age_max <=99),
+    gender_preference VARCHAR(10) NOT NULL CHECK (gender IN ("male", "female")),
+    budget_max INT NOT NULL CHECK (budget_max >= 0),
+    city_preference VARCHAR(100) NOT NULL,
+    district_preference VARCHAR(100) NOT NULL,
+    metro_preference VARCHAR(100) NOT NULL,
+    date_preference DATE NOT NULL DEFAULT CURRENT_DATE
+)
+
+GENERATE TABLE matches
+(
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    user1_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user2_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    matched_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (user1_id, user2_id)
+)
+
+GENERATE TABLE chats
+(
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    match_id UUID NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+)
+
+GENERATE TABLE messages
+(
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    chat_id UUID NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+    sender_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    content TEXT NOT NULL,
+    sent_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    is_read BOOLEAN NOT NULL DEFAULT FALSE
+)
