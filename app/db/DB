@@ -1,9 +1,12 @@
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 CREATE TABLE users
 (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    email VARCHAR(255) NOT NULL UNIQUE, 
-    password VARCHAR(255) NOT NULL,
-    role VARCHAR(10) NOT NULL DEFAULT 'user' CHECK (role IN ('user', 'admin')),
+    email VARCHAR(255) NOT NULL UNIQUE,
+    password_hash VARCHAR(255) NOT NULL,
+    role VARCHAR(10) NOT NULL DEFAULT 'user'
+        CHECK (role IN ('user', 'admin')),
     is_blocked BOOLEAN NOT NULL DEFAULT FALSE,
     registered_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     last_login TIMESTAMP NULL
@@ -12,12 +15,18 @@ CREATE TABLE users
 CREATE TABLE profiles
 (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL UNIQUE
+        REFERENCES users(id)
+        ON DELETE CASCADE,
     first_name VARCHAR(50) NOT NULL,
     last_name VARCHAR(50) NOT NULL,
-    age INT NOT NULL CHECK (age >= 18),
-    gender VARCHAR(10) NOT NULL CHECK (gender IN ('male', 'female')),
+    age INT NOT NULL
+        CHECK (age >= 18 AND age <= 99),
+    gender VARCHAR(10) NOT NULL
+        CHECK (gender IN ('male', 'female')),
     city VARCHAR(100) NOT NULL,
+    district VARCHAR(100) NOT NULL,
+    metro_station VARCHAR(100) NOT NULL,
     bio TEXT NULL,
     photo_url TEXT NULL
 );
@@ -25,7 +34,9 @@ CREATE TABLE profiles
 CREATE TABLE hobbies
 (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    profile_id UUID NOT NULL UNIQUE
+        REFERENCES profiles(id)
+        ON DELETE CASCADE,
     films BOOLEAN NOT NULL DEFAULT FALSE,
     music BOOLEAN NOT NULL DEFAULT FALSE,
     sports BOOLEAN NOT NULL DEFAULT FALSE,
@@ -39,103 +50,166 @@ CREATE TABLE hobbies
     travel BOOLEAN NOT NULL DEFAULT FALSE,
     walking BOOLEAN NOT NULL DEFAULT FALSE,
     dancing BOOLEAN NOT NULL DEFAULT FALSE,
-    singing BOOLEAN NOT NULL DEFAULT FALSE    
+    singing BOOLEAN NOT NULL DEFAULT FALSE
 );
 
 CREATE TABLE bad_habits
 (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    profile_id UUID NOT NULL UNIQUE
+        REFERENCES profiles(id)
+        ON DELETE CASCADE,
     smoking BOOLEAN NOT NULL DEFAULT FALSE,
     pets BOOLEAN NOT NULL DEFAULT FALSE,
-    sleep_mode VARCHAR(10) NOT NULL DEFAULT 'early' CHECK (sleep_mode IN ('early', 'late')),
-    noise_preference VARCHAR(10) NOT NULL DEFAULT 'quiet' CHECK (noise_preference IN ('quiet', 'loud')),
+    sleep_mode VARCHAR(10) NOT NULL DEFAULT 'early'
+        CHECK (sleep_mode IN ('early', 'late')),
+    noise_preference VARCHAR(10) NOT NULL DEFAULT 'quiet'
+        CHECK (noise_preference IN ('quiet', 'loud')),
     guests BOOLEAN NOT NULL DEFAULT FALSE
 );
 
 CREATE TABLE preferences
 (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
-    age_min INT NOT NULL CHECK (age_min >= 18 AND age_min <= 99),
-    age_max INT NOT NULL CHECK (age_max >= 18 AND age_max <= 99),
-    gender_preference VARCHAR(10) NOT NULL CHECK (gender_preference IN ('male', 'female', 'any')), 
-    budget_max INT NOT NULL CHECK (budget_max >= 0),
+    profile_id UUID NOT NULL UNIQUE
+        REFERENCES profiles(id)
+        ON DELETE CASCADE,
+    age_min INT NOT NULL
+        CHECK (age_min >= 18 AND age_min <= 99),
+    age_max INT NOT NULL
+        CHECK (age_max >= 18 AND age_max <= 99),
+    CHECK (age_min <= age_max),
+    gender_preference VARCHAR(10) NOT NULL
+        CHECK (gender_preference IN ('male', 'female', 'any')),
+    budget_max INT NOT NULL
+        CHECK (budget_max >= 0),
     city_preference VARCHAR(100) NOT NULL,
     district_preference VARCHAR(100) NOT NULL,
     metro_preference VARCHAR(100) NOT NULL,
     date_preference DATE NOT NULL DEFAULT CURRENT_DATE,
-    smoking_preference VARCHAR(10) NOT NULL DEFAULT 'any' CHECK (smoking_preference IN ('any', 'yes', 'no')),
-    pets_preference VARCHAR(10) NOT NULL DEFAULT 'any' CHECK (pets_preference IN ('any', 'yes', 'no')),
-    guests_preference VARCHAR(10) NOT NULL DEFAULT 'any' CHECK (guests_preference IN ('any', 'yes', 'no')),
-    sleep_mode_preference VARCHAR(10) NOT NULL DEFAULT 'any' CHECK (sleep_mode_preference IN ('any', 'early', 'late')),
-    noise_preference VARCHAR(10) NOT NULL DEFAULT 'any' CHECK (noise_preference IN ('any', 'quiet', 'loud'))
+    smoking_preference VARCHAR(10) NOT NULL DEFAULT 'any'
+        CHECK (smoking_preference IN ('any', 'yes', 'no')),
+    pets_preference VARCHAR(10) NOT NULL DEFAULT 'any'
+        CHECK (pets_preference IN ('any', 'yes', 'no')),
+    guests_preference VARCHAR(10) NOT NULL DEFAULT 'any'
+        CHECK (guests_preference IN ('any', 'yes', 'no')),
+    sleep_mode_preference VARCHAR(10) NOT NULL DEFAULT 'any'
+        CHECK (sleep_mode_preference IN ('any', 'early', 'late')),
+    noise_preference VARCHAR(10) NOT NULL DEFAULT 'any'
+        CHECK (noise_preference IN ('any', 'quiet', 'loud'))
 );
 
 CREATE TABLE likes
 (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    from_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    to_profile_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
-    liked_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    from_user_id UUID NOT NULL
+        REFERENCES users(id)
+        ON DELETE CASCADE,
+    to_user_id UUID NOT NULL
+        REFERENCES users(id)
+        ON DELETE CASCADE,
+    liked_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CHECK (from_user_id <> to_user_id),
+    UNIQUE (from_user_id, to_user_id)
 );
 
 CREATE TABLE matches
 (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    user1_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    user2_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    matched_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    user1_id UUID NOT NULL
+        REFERENCES users(id)
+        ON DELETE CASCADE,
+    user2_id UUID NOT NULL
+        REFERENCES users(id)
+        ON DELETE CASCADE,
+    matched_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CHECK (user1_id < user2_id),
+    UNIQUE (user1_id, user2_id)
 );
 
 CREATE TABLE chats
 (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    match_id UUID NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+    match_id UUID NOT NULL UNIQUE
+        REFERENCES matches(id)
+        ON DELETE CASCADE,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE messages
 (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    chat_id UUID NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
-    sender_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    chat_id UUID NOT NULL
+        REFERENCES chats(id)
+        ON DELETE CASCADE,
+    sender_id UUID NOT NULL
+        REFERENCES users(id)
+        ON DELETE CASCADE,
     content TEXT NOT NULL,
-    sent_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, -- Добавлена запятая
-    is_read BOOLEAN NOT NULL DEFAULT FALSE
+    sent_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    is_read BOOLEAN NOT NULL DEFAULT FALSE,
+    CHECK (length(trim(content)) > 0)
 );
 
 CREATE TABLE announcements
 (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    room_price INT NOT NULL,
-    total_rooms INT NOT NULL,
-    area INT NOT NULL,
+    user_id UUID NOT NULL
+        REFERENCES users(id)
+        ON DELETE CASCADE,
+    room_price INT NOT NULL
+        CHECK (room_price >= 0),
+    total_rooms INT NOT NULL
+        CHECK (total_rooms > 0),
+    area INT NOT NULL
+        CHECK (area > 0),
     move_in_date DATE NOT NULL,
-    description TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    description TEXT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     free BOOLEAN NOT NULL DEFAULT TRUE
 );
 
 CREATE TABLE announcement_rules
 (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    announcement_id UUID NOT NULL REFERENCES announcements(id) ON DELETE CASCADE,
+    announcement_id UUID NOT NULL UNIQUE
+        REFERENCES announcements(id)
+        ON DELETE CASCADE,
     smoking_allowed BOOLEAN NOT NULL DEFAULT FALSE,
     pets_allowed BOOLEAN NOT NULL DEFAULT FALSE,
     guests_allowed BOOLEAN NOT NULL DEFAULT TRUE,
-    sleep_mode VARCHAR(10) CHECK (sleep_mode IN ('early', 'late', 'any')),
-    noise_level VARCHAR(10) CHECK (noise_level IN ('quiet', 'loud', 'any'))
+    sleep_mode VARCHAR(10) NOT NULL DEFAULT 'any'
+        CHECK (sleep_mode IN ('early', 'late', 'any')),
+    noise_level VARCHAR(10) NOT NULL DEFAULT 'any'
+        CHECK (noise_level IN ('quiet', 'loud', 'any'))
 );
 
 CREATE TABLE addresses
 (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    announcement_id UUID NOT NULL REFERENCES announcements(id),
+    announcement_id UUID NOT NULL UNIQUE
+        REFERENCES announcements(id)
+        ON DELETE CASCADE,
     city VARCHAR(100) NOT NULL,
     street VARCHAR(150) NOT NULL,
     house_number VARCHAR(10) NOT NULL,
     district VARCHAR(100) NOT NULL,
     metro_station VARCHAR(100) NOT NULL
+);
+
+CREATE TABLE reviews
+(
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    reviewer_id UUID NOT NULL
+        REFERENCES users(id)
+        ON DELETE CASCADE,
+    reviewed_user_id UUID NOT NULL
+        REFERENCES users(id)
+        ON DELETE CASCADE,
+    rating SMALLINT NOT NULL
+        CHECK (rating BETWEEN 1 AND 5),
+    comment TEXT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CHECK (reviewer_id <> reviewed_user_id),
+    UNIQUE (reviewer_id, reviewed_user_id)
 );
