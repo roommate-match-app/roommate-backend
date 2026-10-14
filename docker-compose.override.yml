@@ -1,0 +1,28 @@
+# Настройки ТОЛЬКО для локальной разработки.
+# Docker Compose автоматически подключает этот файл при `docker compose up`,
+# но его НЕ нужно переносить на прод-сервер.
+#
+# Публикуем порт PostgreSQL на хост, чтобы можно было подключаться к БД
+# (psql, DB-клиенты) при запущенном только `docker compose up -d db`.
+services:
+  db:
+    # Публикуем порт PostgreSQL на хост: можно подключаться к БД (psql, DB-клиенты),
+    # когда запушен только `docker compose up -d db`.
+    ports:
+      - "5432:5432"
+
+  api:
+    # Монтируем исходники в /app: правки .py подхватываются без пересборки образа.
+    # Том uploads_data (из docker-compose.yml) смонтирован глубже (/app/uploads) и
+    # перекрывает эту точку монтирования, поэтому фото остаются в томе.
+    volumes:
+      - .:/app
+    environment:
+      # На Windows bind-mount через gRPC-FUSE: включаем polling, чтобы авто-перезагрузка
+      # надёжно отслеживала изменения файлов.
+      WATCHFILES_FORCE_POLLING: "true"
+    # Те же действия, что и в базовом compose, но uvicorn с авто-перезагрузкой
+    # и наблюдением только за исходниками (без venv/.git).
+    command: >-
+      sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000
+      --reload --reload-dir /app/app --reload-dir /app/migrations"

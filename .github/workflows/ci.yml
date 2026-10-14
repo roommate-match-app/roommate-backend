@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    name: Lint & tests (SQLite)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt ruff
+      - name: Ruff
+        run: ruff check .
+      - name: Pytest
+        run: python -m pytest -q
+
+  migrations:
+    name: Migrations & seed (PostgreSQL)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: roommate_user
+          POSTGRES_PASSWORD: roommate_password
+          POSTGRES_DB: roommate_db
+        ports:
+          - "5432:5432"
+        options: >-
+          --health-cmd "pg_isready -U roommate_user -d roommate_db"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://roommate_user:roommate_password@localhost:5432/roommate_db
+      SECRET_KEY: ci-secret-key
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Apply migrations
+        run: alembic upgrade head
+      - name: Load demo data
+        run: psql "$DATABASE_URL" -f app/db/seed.sql

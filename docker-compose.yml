@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   db:
     image: postgres:16-alpine
@@ -9,10 +7,35 @@ services:
       POSTGRES_USER: roommate_user
       POSTGRES_PASSWORD: roommate_password
       POSTGRES_DB: roommate_db
-    ports:
-      - "5432:5432"
+    # Порт наружу не публикуется (безопасность). Для доступа к БД из хоста
+    # локально используется docker-compose.override.yml (применяется автоматически).
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U roommate_user -d roommate_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: .
+    container_name: roommate_api
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://roommate_user:roommate_password@db:5432/roommate_db
+      # Задайте свой SECRET_KEY в файле .env (см. .env.example) — без него запуск не состоится.
+      SECRET_KEY: "${SECRET_KEY:?SECRET_KEY is required in .env}"
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+    volumes:
+      # Фото пользователей хранятся в именованном томе и переживают пересоздание контейнера.
+      - uploads_data:/app/uploads
+    ports:
+      - "8000:8000"
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
 
 volumes:
   postgres_data:
+  uploads_data:
