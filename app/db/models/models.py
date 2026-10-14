@@ -1,31 +1,55 @@
+"""SQLAlchemy ORM-модели сервиса «КакДостать Соседа».
+
+Модели описаны переносимыми типами SQLAlchemy: на PostgreSQL они дают ту же схему,
+что и ``app/db/DB.sql`` (UUID, TIMESTAMP, TEXT[]), а на SQLite (используется в тестах)
+работают за счёт generic-типов и совместимого ``StringArray``.
+"""
+
 import uuid
 
 from sqlalchemy import (
-    Column,
-    String,
     Boolean,
+    CheckConstraint,
+    Column,
+    Date,
+    DateTime,
+    ForeignKey,
     Integer,
     SmallInteger,
-    ForeignKey,
+    String,
     Text,
-    CheckConstraint,
     UniqueConstraint,
-    DATE,
-    ARRAY,
-    text,
+    Uuid,
     func,
+    text,
 )
-from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP
+from sqlalchemy.dialects.postgresql import ARRAY as PG_ARRAY
 from sqlalchemy.orm import relationship
+from sqlalchemy.types import JSON, TypeDecorator
 
 from app.db.database import Base
+
+
+class StringArray(TypeDecorator):
+    """Список строк.
+
+    На PostgreSQL — ``TEXT[]``, на остальных СУБД (SQLite в тестах) — JSON.
+    """
+
+    impl = JSON
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect):
+        if dialect.name == "postgresql":
+            return dialect.type_descriptor(PG_ARRAY(Text))
+        return dialect.type_descriptor(JSON())
 
 
 class User(Base):
     __tablename__ = "users"
 
     id = Column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         primary_key=True,
         default=uuid.uuid4,
         server_default=func.gen_random_uuid(),
@@ -45,11 +69,9 @@ class User(Base):
         server_default=text("FALSE"),
     )
     registered_at = Column(
-        TIMESTAMP,
-        nullable=False,
-        server_default=func.current_timestamp(),
+        DateTime, nullable=False, server_default=func.current_timestamp()
     )
-    last_login = Column(TIMESTAMP, nullable=True)
+    last_login = Column(DateTime, nullable=True)
 
     __table_args__ = (
         CheckConstraint("role IN ('user', 'admin')", name="check_user_role"),
@@ -117,19 +139,57 @@ class User(Base):
         cascade="all, delete",
         passive_deletes=True,
     )
+    applications = relationship(
+        "Application",
+        back_populates="applicant",
+        cascade="all, delete",
+        passive_deletes=True,
+    )
+    notifications = relationship(
+        "Notification",
+        back_populates="user",
+        cascade="all, delete",
+        passive_deletes=True,
+    )
+    favorites = relationship(
+        "Favorite",
+        back_populates="user",
+        cascade="all, delete",
+        passive_deletes=True,
+    )
+    views = relationship(
+        "View",
+        back_populates="user",
+        cascade="all, delete",
+        passive_deletes=True,
+    )
+    complaints_made = relationship(
+        "Complaint",
+        foreign_keys="Complaint.complainant_id",
+        back_populates="complainant",
+        cascade="all, delete",
+        passive_deletes=True,
+    )
+    complaints_received = relationship(
+        "Complaint",
+        foreign_keys="Complaint.target_user_id",
+        back_populates="target_user",
+        cascade="all, delete",
+        passive_deletes=True,
+    )
 
 
 class Profile(Base):
     __tablename__ = "profiles"
 
     id = Column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         primary_key=True,
         default=uuid.uuid4,
         server_default=func.gen_random_uuid(),
     )
     user_id = Column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         ForeignKey("users.id", ondelete="CASCADE"),
         unique=True,
         nullable=False,
@@ -141,6 +201,7 @@ class Profile(Base):
     city = Column(String(100), nullable=False)
     district = Column(String(100), nullable=False)
     metro_station = Column(String(100), nullable=False)
+    minutes_to_metro = Column(Integer, nullable=True)
     bio = Column(Text, nullable=True)
     photo_url = Column(Text, nullable=True)
 
@@ -177,13 +238,13 @@ class Hobbies(Base):
     __tablename__ = "hobbies"
 
     id = Column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         primary_key=True,
         default=uuid.uuid4,
         server_default=func.gen_random_uuid(),
     )
     profile_id = Column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         ForeignKey("profiles.id", ondelete="CASCADE"),
         unique=True,
         nullable=False,
@@ -210,13 +271,13 @@ class BadHabits(Base):
     __tablename__ = "bad_habits"
 
     id = Column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         primary_key=True,
         default=uuid.uuid4,
         server_default=func.gen_random_uuid(),
     )
     profile_id = Column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         ForeignKey("profiles.id", ondelete="CASCADE"),
         unique=True,
         nullable=False,
@@ -233,7 +294,9 @@ class BadHabits(Base):
 
     __table_args__ = (
         CheckConstraint("sleep_mode IN ('early', 'late')", name="check_sleep_mode"),
-        CheckConstraint("noise_preference IN ('quiet', 'loud')", name="check_noise_pref"),
+        CheckConstraint(
+            "noise_preference IN ('quiet', 'loud')", name="check_bad_habits_noise"
+        ),
     )
 
     profile = relationship("Profile", back_populates="bad_habits")
@@ -243,13 +306,13 @@ class Preferences(Base):
     __tablename__ = "preferences"
 
     id = Column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         primary_key=True,
         default=uuid.uuid4,
         server_default=func.gen_random_uuid(),
     )
     profile_id = Column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         ForeignKey("profiles.id", ondelete="CASCADE"),
         unique=True,
         nullable=False,
@@ -259,9 +322,9 @@ class Preferences(Base):
     gender_preference = Column(String(10), nullable=False)
     budget_max = Column(Integer, nullable=False)
     city_preference = Column(String(100), nullable=False)
-    district_preference = Column(ARRAY(Text), nullable=False)
-    metro_preference = Column(ARRAY(Text), nullable=False)
-    date_preference = Column(DATE, nullable=False, server_default=func.current_date())
+    district_preference = Column(StringArray, nullable=False)
+    metro_preference = Column(StringArray, nullable=False)
+    date_preference = Column(Date, nullable=False, server_default=func.current_date())
     smoking_preference = Column(
         String(10), nullable=False, default="any", server_default=text("'any'")
     )
@@ -297,7 +360,7 @@ class Preferences(Base):
             "sleep_mode_preference IN ('any', 'early', 'late')", name="check_sleep_pref"
         ),
         CheckConstraint(
-            "noise_preference IN ('any', 'quiet', 'loud')", name="check_noise_pref"
+            "noise_preference IN ('any', 'quiet', 'loud')", name="check_pref_noise"
         ),
     )
 
@@ -308,22 +371,22 @@ class Like(Base):
     __tablename__ = "likes"
 
     id = Column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         primary_key=True,
         default=uuid.uuid4,
         server_default=func.gen_random_uuid(),
     )
     from_user_id = Column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
     )
     to_user_id = Column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
     )
-    liked_at = Column(TIMESTAMP, nullable=False, server_default=func.current_timestamp())
+    liked_at = Column(DateTime, nullable=False, server_default=func.current_timestamp())
 
     __table_args__ = (
         CheckConstraint("from_user_id <> to_user_id", name="check_like_not_self"),
@@ -342,22 +405,22 @@ class Match(Base):
     __tablename__ = "matches"
 
     id = Column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         primary_key=True,
         default=uuid.uuid4,
         server_default=func.gen_random_uuid(),
     )
     user1_id = Column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
     )
     user2_id = Column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
     )
-    matched_at = Column(TIMESTAMP, nullable=False, server_default=func.current_timestamp())
+    matched_at = Column(DateTime, nullable=False, server_default=func.current_timestamp())
 
     __table_args__ = (
         CheckConstraint("user1_id < user2_id", name="check_match_user_order"),
@@ -379,18 +442,18 @@ class Chat(Base):
     __tablename__ = "chats"
 
     id = Column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         primary_key=True,
         default=uuid.uuid4,
         server_default=func.gen_random_uuid(),
     )
     match_id = Column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         ForeignKey("matches.id", ondelete="CASCADE"),
         unique=True,
         nullable=False,
     )
-    created_at = Column(TIMESTAMP, nullable=False, server_default=func.current_timestamp())
+    created_at = Column(DateTime, nullable=False, server_default=func.current_timestamp())
 
     match = relationship("Match", back_populates="chat")
     messages = relationship(
@@ -406,23 +469,23 @@ class Message(Base):
     __tablename__ = "messages"
 
     id = Column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         primary_key=True,
         default=uuid.uuid4,
         server_default=func.gen_random_uuid(),
     )
     chat_id = Column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         ForeignKey("chats.id", ondelete="CASCADE"),
         nullable=False,
     )
     sender_id = Column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
     )
     content = Column(Text, nullable=False)
-    sent_at = Column(TIMESTAMP, nullable=False, server_default=func.current_timestamp())
+    sent_at = Column(DateTime, nullable=False, server_default=func.current_timestamp())
     is_read = Column(Boolean, nullable=False, default=False, server_default=text("FALSE"))
 
     __table_args__ = (
@@ -437,22 +500,22 @@ class Announcement(Base):
     __tablename__ = "announcements"
 
     id = Column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         primary_key=True,
         default=uuid.uuid4,
         server_default=func.gen_random_uuid(),
     )
     user_id = Column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
     )
     room_price = Column(Integer, nullable=False)
     total_rooms = Column(Integer, nullable=False)
     area = Column(Integer, nullable=False)
-    move_in_date = Column(DATE, nullable=False)
+    move_in_date = Column(Date, nullable=False)
     description = Column(Text, nullable=True)
-    created_at = Column(TIMESTAMP, nullable=False, server_default=func.current_timestamp())
+    created_at = Column(DateTime, nullable=False, server_default=func.current_timestamp())
     free = Column(Boolean, nullable=False, default=True, server_default=text("TRUE"))
 
     __table_args__ = (
@@ -476,19 +539,39 @@ class Announcement(Base):
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
+    amenities = relationship(
+        "AnnouncementAmenities",
+        back_populates="announcement",
+        uselist=False,
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    photos = relationship(
+        "AnnouncementPhoto",
+        back_populates="announcement",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="AnnouncementPhoto.position",
+    )
+    applications = relationship(
+        "Application",
+        back_populates="announcement",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
 
 class AnnouncementRules(Base):
     __tablename__ = "announcement_rules"
 
     id = Column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         primary_key=True,
         default=uuid.uuid4,
         server_default=func.gen_random_uuid(),
     )
     announcement_id = Column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         ForeignKey("announcements.id", ondelete="CASCADE"),
         unique=True,
         nullable=False,
@@ -521,13 +604,13 @@ class Address(Base):
     __tablename__ = "addresses"
 
     id = Column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         primary_key=True,
         default=uuid.uuid4,
         server_default=func.gen_random_uuid(),
     )
     announcement_id = Column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         ForeignKey("announcements.id", ondelete="CASCADE"),
         unique=True,
         nullable=False,
@@ -537,6 +620,7 @@ class Address(Base):
     house_number = Column(String(10), nullable=False)
     district = Column(String(100), nullable=False)
     metro_station = Column(String(100), nullable=False)
+    minutes_to_metro = Column(Integer, nullable=True)
 
     announcement = relationship("Announcement", back_populates="address")
 
@@ -545,24 +629,24 @@ class Review(Base):
     __tablename__ = "reviews"
 
     id = Column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         primary_key=True,
         default=uuid.uuid4,
         server_default=func.gen_random_uuid(),
     )
     reviewer_id = Column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
     )
     reviewed_user_id = Column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
     )
     rating = Column(SmallInteger, nullable=False)
     comment = Column(Text, nullable=True)
-    created_at = Column(TIMESTAMP, nullable=False, server_default=func.current_timestamp())
+    created_at = Column(DateTime, nullable=False, server_default=func.current_timestamp())
 
     __table_args__ = (
         CheckConstraint("rating BETWEEN 1 AND 5", name="check_review_rating"),
@@ -578,3 +662,234 @@ class Review(Base):
     reviewed_user = relationship(
         "User", foreign_keys=[reviewed_user_id], back_populates="reviews_received"
     )
+
+
+class Application(Base):
+    """Заявка на подселение к объявлению (обратный сценарий, UC-10)."""
+
+    __tablename__ = "applications"
+
+    id = Column(
+        Uuid(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=func.gen_random_uuid(),
+    )
+    announcement_id = Column(
+        Uuid(as_uuid=True),
+        ForeignKey("announcements.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    applicant_id = Column(
+        Uuid(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    message = Column(Text, nullable=True)
+    status = Column(
+        String(10), nullable=False, default="pending", server_default=text("'pending'")
+    )
+    created_at = Column(DateTime, nullable=False, server_default=func.current_timestamp())
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'accepted', 'rejected')", name="check_application_status"
+        ),
+        UniqueConstraint(
+            "announcement_id", "applicant_id", name="uq_applications_announcement_owner"
+        ),
+    )
+
+    announcement = relationship("Announcement", back_populates="applications")
+    applicant = relationship("User", back_populates="applications")
+
+
+class Notification(Base):
+    """Системное уведомление пользователя (UC-8)."""
+
+    __tablename__ = "notifications"
+
+    id = Column(
+        Uuid(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=func.gen_random_uuid(),
+    )
+    user_id = Column(
+        Uuid(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    type = Column(String(20), nullable=False)
+    body = Column(Text, nullable=False)
+    is_read = Column(Boolean, nullable=False, default=False, server_default=text("FALSE"))
+    created_at = Column(DateTime, nullable=False, server_default=func.current_timestamp())
+
+    __table_args__ = (
+        CheckConstraint(
+            "type IN ('like', 'match', 'message', 'application', 'review')",
+            name="check_notification_type",
+        ),
+    )
+
+    user = relationship("User", back_populates="notifications")
+
+
+class Favorite(Base):
+    """Избранное с полиморфной связью (анкета или объявление)."""
+
+    __tablename__ = "favorites"
+
+    id = Column(
+        Uuid(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=func.gen_random_uuid(),
+    )
+    user_id = Column(
+        Uuid(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    target_type = Column(String(12), nullable=False)
+    target_id = Column(Uuid(as_uuid=True), nullable=False)
+    created_at = Column(DateTime, nullable=False, server_default=func.current_timestamp())
+
+    __table_args__ = (
+        CheckConstraint(
+            "target_type IN ('profile', 'announcement')", name="check_favorite_target"
+        ),
+        UniqueConstraint(
+            "user_id", "target_type", "target_id", name="uq_favorites_user_target"
+        ),
+    )
+
+    user = relationship("User", back_populates="favorites")
+
+
+class View(Base):
+    """Просмотр анкеты или объявления (полиморфная связь)."""
+
+    __tablename__ = "views"
+
+    id = Column(
+        Uuid(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=func.gen_random_uuid(),
+    )
+    user_id = Column(
+        Uuid(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    target_type = Column(String(12), nullable=False)
+    target_id = Column(Uuid(as_uuid=True), nullable=False)
+    viewed_at = Column(DateTime, nullable=False, server_default=func.current_timestamp())
+
+    __table_args__ = (
+        CheckConstraint(
+            "target_type IN ('profile', 'announcement')", name="check_view_target"
+        ),
+    )
+
+    user = relationship("User", back_populates="views")
+
+
+class Complaint(Base):
+    """Жалоба на пользователя (модерируется вручную)."""
+
+    __tablename__ = "complaints"
+
+    id = Column(
+        Uuid(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=func.gen_random_uuid(),
+    )
+    complainant_id = Column(
+        Uuid(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    target_user_id = Column(
+        Uuid(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    reason = Column(Text, nullable=False)
+    status = Column(String(10), nullable=False, default="open", server_default=text("'open'"))
+    created_at = Column(DateTime, nullable=False, server_default=func.current_timestamp())
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('open', 'resolved', 'rejected')", name="check_complaint_status"
+        ),
+        CheckConstraint(
+            "complainant_id <> target_user_id", name="check_complaint_not_self"
+        ),
+    )
+
+    complainant = relationship(
+        "User", foreign_keys=[complainant_id], back_populates="complaints_made"
+    )
+    target_user = relationship(
+        "User", foreign_keys=[target_user_id], back_populates="complaints_received"
+    )
+
+
+class AnnouncementAmenities(Base):
+    """Удобства в жилье объявления (1:1)."""
+
+    __tablename__ = "announcement_amenities"
+
+    id = Column(
+        Uuid(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=func.gen_random_uuid(),
+    )
+    announcement_id = Column(
+        Uuid(as_uuid=True),
+        ForeignKey("announcements.id", ondelete="CASCADE"),
+        unique=True,
+        nullable=False,
+    )
+    internet = Column(Boolean, nullable=False, default=False, server_default=text("FALSE"))
+    furniture = Column(Boolean, nullable=False, default=False, server_default=text("FALSE"))
+    kitchen = Column(Boolean, nullable=False, default=False, server_default=text("FALSE"))
+    washing_machine = Column(Boolean, nullable=False, default=False, server_default=text("FALSE"))
+    dishwasher = Column(Boolean, nullable=False, default=False, server_default=text("FALSE"))
+    balcony = Column(Boolean, nullable=False, default=False, server_default=text("FALSE"))
+    elevator = Column(Boolean, nullable=False, default=False, server_default=text("FALSE"))
+    air_conditioning = Column(Boolean, nullable=False, default=False, server_default=text("FALSE"))
+
+    announcement = relationship("Announcement", back_populates="amenities")
+
+
+class AnnouncementPhoto(Base):
+    """Фотография объявления жилья."""
+
+    __tablename__ = "announcement_photos"
+
+    id = Column(
+        Uuid(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=func.gen_random_uuid(),
+    )
+    announcement_id = Column(
+        Uuid(as_uuid=True),
+        ForeignKey("announcements.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    url = Column(Text, nullable=False)
+    is_main = Column(Boolean, nullable=False, default=False, server_default=text("FALSE"))
+    position = Column(Integer, nullable=False, default=0, server_default=text("0"))
+    created_at = Column(DateTime, nullable=False, server_default=func.current_timestamp())
+
+    __table_args__ = (
+        CheckConstraint("position >= 0", name="check_photo_position"),
+    )
+
+    announcement = relationship("Announcement", back_populates="photos")
